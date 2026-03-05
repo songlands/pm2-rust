@@ -1,0 +1,56 @@
+# PM2 YAML 配置文件示例 - 生态系统（多应用）
+# 使用 YAML 格式定义多个应用
+
+apps:
+  # Go HTTP 服务器
+  - name: go-server
+    script: examples/go-server/go-server
+    instances: 1
+    exec_mode: fork
+    max_memory_restart: 200M
+    log_file: ./logs/go-server.log
+    error_file: ./logs/go-server-error.log
+    # 日志轮转配置
+    log_rotate_size: 10M        # 日志文件大小达到 10MB 时轮转
+    log_rotate_count: 5         # 保留 5 个轮转文件
+    log_rotate_interval: 1d     # 每天轮转一次
+    autorestart: true
+    env:
+      PORT: "3001"
+      HOST: 0.0.0.0
+
+  # Node.js HTTP 服务器
+  - name: node-server
+    script: examples/node-server/app.js
+    instances: 1
+    exec_mode: fork
+    max_memory_restart: 500M
+    log_file: ./logs/node-server.log
+    error_file: ./logs/node-server-error.log
+    # 日志轮转配置
+    log_rotate_size: 20M        # 日志文件大小达到 20MB 时轮转
+    log_rotate_count: 10        # 保留 10 个轮转文件
+    log_rotate_interval: 12h    # 每 12 小时轮转一次
+    autorestart: true
+    env:
+      NODE_ENV: production
+      PORT: "3002"
+      HOST: 0.0.0.0
+
+  # Python HTTP 服务器
+  - name: python-server
+    script: examples/python-server/app.py
+    instances: 1
+    exec_mode: fork
+    max_memory_restart: 300M
+    log_file: ./logs/python-server.log
+    error_file: ./logs/python-server-error.log
+    # 日志轮转配置
+    log_rotate_size: 5M         # 日志文件大小达到 5MB 时轮转
+    log_rotate_count: 3         # 保留 3 个轮转文件
+    log_rotate_interval: 6h     # 每 6 小时轮转一次
+    autorestart: true
+    env:
+      PYTHON_ENV: production
+      PORT: "3004"
+      HOST: 0.0.0.0
