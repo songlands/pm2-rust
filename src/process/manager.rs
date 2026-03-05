@@ -11,7 +11,7 @@ pub struct ProcessManager {
     state: ProcessState,
     running_processes: HashMap<String, ManagedProcess>,
     system: System,
-    log_rotators: HashMap<String, (LogRotator, LogRotator)>, // process_name -> (out_rotator, err_rotator)
+    log_rotators: HashMap<String, (LogRotator, LogRotator)>,
 }
 
 impl ProcessManager {
@@ -29,7 +29,6 @@ impl ProcessManager {
         })
     }
 
-    /// 创建进程的日志轮转器
     fn create_log_rotators(&self, process_info: &ProcessInfo) -> (LogRotator, LogRotator) {
         use crate::log::LogManager;
 
@@ -310,6 +309,8 @@ impl ProcessManager {
     }
 
     pub async fn update_metrics(&mut self) {
+        self.reap_zombie_processes().await;
+
         self.system
             .refresh_processes_specifics(ProcessRefreshKind::new());
 
@@ -324,7 +325,6 @@ impl ProcessManager {
                     process_info.memory_mb = memory_mb;
                     process_info.uptime_seconds = uptime;
 
-                    // Check memory limit
                     if let Some(max_memory) = process_info.max_memory_restart {
                         if memory_mb > max_memory as f64 {
                             warn!(
@@ -334,7 +334,6 @@ impl ProcessManager {
                         }
                     }
                 } else {
-                    // Process not found, might have crashed
                     if process_info.status == ProcessStatus::Online {
                         warn!("Process '{}' (PID: {}) not found, may have crashed", name, pid);
                         process_info.status = ProcessStatus::Errored;
@@ -344,8 +343,39 @@ impl ProcessManager {
             }
         }
 
-        // Save updated state
         let _ = self.state.save().await;
+    }
+
+    async fn reap_zombie_processes(&mut self) {
+        let mut to_remove = Vec::new();
+
+        for (name, managed) in self.running_processes.iter_mut() {
+            if let Some(child) = &mut managed.child {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        info!("Process '{}' exited with status: {:?}", name, status);
+                        to_remove.push(name.clone());
+
+                        if let Some(process_info) = self.state.processes.get_mut(name) {
+                            process_info.status = ProcessStatus::Stopped;
+                            process_info.pid = None;
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        error!("Error checking process '{}': {}", name, e);
+                    }
+                }
+            }
+        }
+
+        for name in &to_remove {
+            self.running_processes.remove(name);
+        }
+
+        if !to_remove.is_empty() {
+            let _ = self.state.save().await;
+        }
     }
 
     #[allow(dead_code)]

@@ -23,7 +23,7 @@ apps:
   - name: node-server
     script: examples/node-server/app.js
     instances: 2
-    exec_mode: fork
+    exec_mode: cluster
     max_memory_restart: 500M
     log_file: ./logs/node-server.log
     error_file: ./logs/node-server-error.log

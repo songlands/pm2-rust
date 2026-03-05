@@ -25,7 +25,7 @@
 ```bash
 # 克隆仓库
 git clone https://github.com/songlands/pm2-rust.git
-cd pm2
+cd pm2-rust
 
 # 编译发布版本
 cargo build --release

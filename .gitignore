@@ -98,3 +98,7 @@ test-results/
 *.zip
 *.rar
 *.7z
+
+pm2
+pm2-rust
+pm2-runtime

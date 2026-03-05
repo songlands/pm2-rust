@@ -498,7 +498,7 @@ fn read_last_lines(path: &PathBuf, max_lines: usize, _offset: &mut u64) -> Resul
 
 pub async fn logs(name: Option<&str>, lines: usize, follow: bool) -> Result<()> {
     use tokio::fs::File;
-    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::io::{AsyncBufReadExt, BufReader, AsyncSeekExt};
 
     let manager = ProcessManager::new().await?;
 
@@ -528,40 +528,95 @@ pub async fn logs(name: Option<&str>, lines: usize, follow: bool) -> Result<()> 
         return Ok(());
     }
 
-    for process_name in &process_names {
-        let out_log = logs_dir.join(format!("{}-out.log", process_name));
-        let err_log = logs_dir.join(format!("{}-error.log", process_name));
+    let log_files: Vec<PathBuf> = process_names
+        .iter()
+        .flat_map(|name| {
+            vec![
+                logs_dir.join(format!("{}-out.log", name)),
+                logs_dir.join(format!("{}-error.log", name)),
+            ]
+        })
+        .filter(|p| p.exists())
+        .collect();
 
-        for log_path in &[out_log, err_log] {
-            if log_path.exists() {
-                println!("\n{} {}", "==>".blue(), log_path.display().to_string().bold());
-                println!("{}", "=".repeat(50));
+    if log_files.is_empty() {
+        display::display_warning("No log files found");
+        return Ok(());
+    }
 
-                match File::open(log_path).await {
-                    Ok(file) => {
-                        let reader = BufReader::new(file);
-                        let mut lines_iter = reader.lines();
-                        let mut all_lines = Vec::new();
+    if !follow {
+        for log_path in &log_files {
+            println!("\n{} {}", "==>".blue(), log_path.display().to_string().bold());
+            println!("{}", "=".repeat(50));
 
-                        while let Some(line) = lines_iter.next_line().await? {
-                            all_lines.push(line);
-                        }
+            match File::open(log_path).await {
+                Ok(file) => {
+                    let reader = BufReader::new(file);
+                    let mut lines_iter = reader.lines();
+                    let mut all_lines = Vec::new();
 
-                        let start = all_lines.len().saturating_sub(lines);
-                        for line in &all_lines[start..] {
-                            println!("{}", line);
-                        }
-
-                        if follow {
-                            display::display_info("Follow mode not yet implemented");
-                        }
+                    while let Some(line) = lines_iter.next_line().await? {
+                        all_lines.push(line);
                     }
-                    Err(e) => {
-                        display::display_error(&format!("Failed to open log file: {}", e));
+
+                    let start = all_lines.len().saturating_sub(lines);
+                    for line in &all_lines[start..] {
+                        println!("{}", line);
                     }
+                }
+                Err(e) => {
+                    display::display_error(&format!("Failed to open log file: {}", e));
                 }
             }
         }
+    } else {
+        println!("{}", "Tailing logs... (Press Ctrl+C to exit)".cyan().bold());
+        println!();
+
+        let mut file_handles: Vec<(String, File, std::io::SeekFrom)> = Vec::new();
+
+        for log_path in &log_files {
+            match File::open(log_path).await {
+                Ok(mut file) => {
+                    let metadata = file.metadata().await?;
+                    let file_size = metadata.len();
+                    let seek_pos = std::io::SeekFrom::Start(file_size);
+
+                    file.seek(seek_pos).await?;
+
+                    let name = log_path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+
+                    file_handles.push((name, file, seek_pos));
+                }
+                Err(_) => continue,
+            }
+        }
+
+        let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let r = running.clone();
+
+        ctrlc::set_handler(move || {
+            r.store(false, std::sync::atomic::Ordering::SeqCst);
+        }).expect("Error setting Ctrl-C handler");
+
+        while running.load(std::sync::atomic::Ordering::SeqCst) {
+            for (name, file, _) in &mut file_handles {
+                let reader = BufReader::new(file);
+                let mut lines_iter = reader.lines();
+
+                while let Some(line) = lines_iter.next_line().await? {
+                    let timestamp = chrono::Local::now().format("%H:%M:%S").to_string();
+                    println!("[{}] {} {}", timestamp.dimmed(), name.green().bold(), line);
+                }
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        }
+
+        println!("\n{}", "Stopped tailing logs.".yellow());
     }
 
     Ok(())
