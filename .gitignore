@@ -49,6 +49,11 @@ flamegraph.svg
 perf.data
 perf.data.old
 
+./pm2
+pm2
+pm2-rust
+pm2-runtime
+
 # 环境变量文件
 .env
 .env.local
@@ -98,7 +103,3 @@ test-results/
 *.zip
 *.rar
 *.7z
-
-pm2
-pm2-rust
-pm2-runtime
