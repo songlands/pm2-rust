@@ -8,13 +8,13 @@ use tracing::{error, info, warn};
 
 pub mod server;
 
-pub use server::DaemonServer;
-
+#[allow(dead_code)]
 pub struct Daemon {
     process_manager: ProcessManager,
     shutdown_signal: tokio::sync::watch::Sender<bool>,
 }
 
+#[allow(dead_code)]
 impl Daemon {
     pub async fn new() -> Result<Self> {
         let process_manager = ProcessManager::new().await?;
@@ -184,16 +184,25 @@ impl Daemon {
     }
 }
 
+#[allow(dead_code)]
 pub fn get_pm2_home() -> Result<PathBuf> {
-    // Use current directory for PM2 home to avoid permission issues
-    let current_dir = std::env::current_dir().context("Failed to get current directory")?;
-    Ok(current_dir.join(".pm2"))
+    let pm2_home = if let Ok(home) = std::env::var("PM2_HOME") {
+        PathBuf::from(home)
+    } else if let Some(home_dir) = dirs::home_dir() {
+        home_dir.join(".pm2")
+    } else {
+        let current_dir = std::env::current_dir().context("Failed to get current directory")?;
+        current_dir.join(".pm2")
+    };
+    Ok(pm2_home)
 }
 
+#[allow(dead_code)]
 pub fn get_pid_file_path() -> Result<PathBuf> {
     Ok(get_pm2_home()?.join("pm2.pid"))
 }
 
+#[allow(dead_code)]
 pub fn is_daemon_running() -> Result<bool> {
     let pid_file = get_pid_file_path()?;
 
@@ -204,7 +213,6 @@ pub fn is_daemon_running() -> Result<bool> {
     let pid_str = std::fs::read_to_string(&pid_file)?;
     let pid: i32 = pid_str.trim().parse()?;
 
-    // Check if process exists
     #[cfg(unix)]
     {
         unsafe {
@@ -215,11 +223,11 @@ pub fn is_daemon_running() -> Result<bool> {
 
     #[cfg(not(unix))]
     {
-        // For non-Unix systems, just check if PID file exists
         Ok(true)
     }
 }
 
+#[allow(dead_code)]
 pub async fn start_daemon() -> Result<()> {
     if is_daemon_running()? {
         info!("Daemon is already running");
@@ -262,6 +270,7 @@ pub async fn start_daemon() -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 pub async fn stop_daemon() -> Result<()> {
     let pid_file = get_pid_file_path()?;
 

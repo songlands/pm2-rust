@@ -1,17 +1,12 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::process::Stdio;
-use tokio::process::{Child, Command};
-use tokio::sync::Mutex;
-use tracing::{error, info, warn};
 use uuid::Uuid;
 
 pub mod manager;
 pub mod state;
 
 pub use manager::ProcessManager;
-pub use state::ProcessState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessInfo {
@@ -71,8 +66,9 @@ impl std::fmt::Display for ProcessStatus {
 
 #[derive(Debug)]
 pub struct ManagedProcess {
+    #[allow(dead_code)]
     pub info: ProcessInfo,
-    pub child: Option<Child>,
+    pub child: Option<tokio::process::Child>,
 }
 
 impl ProcessInfo {

@@ -3,7 +3,9 @@ use crate::process::{ProcessInfo, ProcessManager};
 use crate::cli::display;
 use anyhow::Result;
 use colored::Colorize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::io::{self, BufRead, Write};
+use std::fs::File;
 use tracing::{error, info};
 
 pub async fn start(
@@ -126,13 +128,50 @@ fn parse_memory_limit(s: &str) -> Option<u64> {
 pub async fn stop(name: &str) -> Result<()> {
     let mut manager = ProcessManager::new().await?;
 
-    match manager.stop_process(name).await {
+    if name == "all" {
+        let processes = manager.list_processes();
+        if processes.is_empty() {
+            display::display_info("No processes to stop");
+            return Ok(());
+        }
+
+        let process_names: Vec<String> = processes
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
+
+        for process_name in process_names {
+            match manager.stop_process(&process_name).await {
+                Ok(_) => {
+                    display::display_success(&format!("Process '{}' stopped successfully", process_name));
+                }
+                Err(e) => {
+                    display::display_error(&format!("Failed to stop process '{}': {}", process_name, e));
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    let process_name = if manager.get_process(name).is_some() {
+        name.to_string()
+    } else {
+        match manager.find_process_by_id(name).await {
+            Some(process) => process.name.clone(),
+            None => {
+                display::display_error(&format!("Process '{}' not found", name));
+                anyhow::bail!("Process not found")
+            }
+        }
+    };
+
+    match manager.stop_process(&process_name).await {
         Ok(_) => {
-            display::display_success(&format!("Process '{}' stopped successfully", name));
+            display::display_success(&format!("Process '{}' stopped successfully", process_name));
             Ok(())
         }
         Err(e) => {
-            display::display_error(&format!("Failed to stop process '{}': {}", name, e));
+            display::display_error(&format!("Failed to stop process '{}': {}", process_name, e));
             Err(e)
         }
     }
@@ -141,13 +180,50 @@ pub async fn stop(name: &str) -> Result<()> {
 pub async fn restart(name: &str) -> Result<()> {
     let mut manager = ProcessManager::new().await?;
 
-    match manager.restart_process(name).await {
+    if name == "all" {
+        let processes = manager.list_processes();
+        if processes.is_empty() {
+            display::display_info("No processes to restart");
+            return Ok(());
+        }
+
+        let process_names: Vec<String> = processes
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
+
+        for process_name in process_names {
+            match manager.restart_process(&process_name).await {
+                Ok(_) => {
+                    display::display_success(&format!("Process '{}' restarted successfully", process_name));
+                }
+                Err(e) => {
+                    display::display_error(&format!("Failed to restart process '{}': {}", process_name, e));
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    let process_name = if manager.get_process(name).is_some() {
+        name.to_string()
+    } else {
+        match manager.find_process_by_id(name).await {
+            Some(process) => process.name.clone(),
+            None => {
+                display::display_error(&format!("Process '{}' not found", name));
+                anyhow::bail!("Process not found")
+            }
+        }
+    };
+
+    match manager.restart_process(&process_name).await {
         Ok(_) => {
-            display::display_success(&format!("Process '{}' restarted successfully", name));
+            display::display_success(&format!("Process '{}' restarted successfully", process_name));
             Ok(())
         }
         Err(e) => {
-            display::display_error(&format!("Failed to restart process '{}': {}", name, e));
+            display::display_error(&format!("Failed to restart process '{}': {}", process_name, e));
             Err(e)
         }
     }
@@ -220,9 +296,15 @@ pub async fn list() -> Result<()> {
 pub async fn show(name: &str) -> Result<()> {
     let manager = ProcessManager::new().await?;
 
-    match manager.get_process(name) {
+    let process = if let Some(p) = manager.get_process(name) {
+        Some(p.clone())
+    } else {
+        manager.find_process_by_id(name).await
+    };
+
+    match process {
         Some(process) => {
-            display::display_process_details(process);
+            display::display_process_details(&process);
             Ok(())
         }
         None => {
@@ -233,26 +315,185 @@ pub async fn show(name: &str) -> Result<()> {
 }
 
 pub async fn monit() -> Result<()> {
-    println!("Monitoring processes... (Press Ctrl+C to exit)");
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+    }).expect("Error setting Ctrl-C handler");
 
     let mut manager = ProcessManager::new().await?;
+    let selected_index: usize = 0;
+    let mut log_offset: u64 = 0;
 
-    // Clear screen and show header
     print!("\x1B[2J\x1B[1;1H");
+    print!("\x1B[?25l");
 
-    loop {
-        // Update metrics
+    let mut last_lines_count = 0;
+
+    while running.load(Ordering::SeqCst) {
         manager.update_metrics().await;
-
-        // Move cursor to top
-        print!("\x1B[1;1H");
-
         let processes = manager.list_processes();
-        display::display_process_list(&processes);
 
-        // Wait before next update
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        let term_size = term_size::dimensions().unwrap_or((80, 24));
+        let width = term_size.0;
+        let height = term_size.1;
+
+        let header_height = 3;
+        let process_list_height = if processes.is_empty() {
+            3
+        } else {
+            std::cmp::min(processes.len() + 2, height / 3)
+        };
+        let log_height = height.saturating_sub(header_height + process_list_height + 4);
+
+        print!("\x1B[2J\x1B[1;1H");
+
+        println!(
+            "\x1B[44m\x1B[37m\x1B[1m {:<width$} \x1B[0m",
+            format!("PM2 Monitor - {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S")),
+            width = width - 1
+        );
+        println!();
+
+        if processes.is_empty() {
+            println!(" {}", "No processes running".yellow());
+        } else {
+            println!(
+                " \x1B[1m{:<20} {:<8} {:<10} {:<8} {:>8} {:>10}\x1B[0m",
+                "Name", "PID", "Status", "Restarts", "CPU", "Memory"
+            );
+            println!(" {}", "─".repeat(width - 2));
+
+            for (idx, process) in processes.iter().enumerate() {
+                let is_selected = idx == selected_index;
+                let prefix = if is_selected { "▶" } else { " " };
+                let selected_style = if is_selected { "\x1B[7m" } else { "" };
+
+                let status_display = match process.status.to_string().as_str() {
+                    "online" => "\x1B[32monline\x1B[0m".to_string(),
+                    "stopped" => "\x1B[90mstopped\x1B[0m".to_string(),
+                    "errored" => "\x1B[31merrored\x1B[0m".to_string(),
+                    "stopping" => "\x1B[33mstopping\x1B[0m".to_string(),
+                    "launching" => "\x1B[34mlaunching\x1B[0m".to_string(),
+                    other => other.to_string(),
+                };
+
+                let pid_str = process
+                    .pid
+                    .map(|p| p.to_string())
+                    .unwrap_or_else(|| "N/A".to_string());
+
+                let mem_str = if process.memory_mb >= 1024.0 {
+                    format!("{:.1}GB", process.memory_mb / 1024.0)
+                } else {
+                    format!("{:.1}MB", process.memory_mb)
+                };
+
+                println!(
+                    "{}{} {:<19} {:<8} {:<19} {:<8} {:>7}% {:>10} \x1B[0m",
+                    selected_style,
+                    prefix,
+                    if process.name.len() > 19 { &process.name[..19] } else { &process.name },
+                    pid_str,
+                    status_display,
+                    process.restart_count,
+                    process.cpu_percent,
+                    mem_str
+                );
+            }
+        }
+
+        println!();
+        println!(
+            "\x1B[44m\x1B[37m\x1B[1m {:<width$} \x1B[0m",
+            "Logs (press Ctrl+C to exit)",
+            width = width - 1
+        );
+
+        if !processes.is_empty() && selected_index < processes.len() {
+            let selected_process = &processes[selected_index];
+            let log_path = get_log_path(&selected_process.name);
+
+            if log_path.exists() {
+                match read_last_lines(&log_path, log_height, &mut log_offset) {
+                    Ok(lines) => {
+                        last_lines_count = lines.len();
+                        for line in lines {
+                            let truncated = if line.len() > width - 2 {
+                                &line[..width - 2]
+                            } else {
+                                &line
+                            };
+                            println!(" {}", truncated);
+                        }
+                    }
+                    Err(_) => {
+                        println!(" {}", "Unable to read log file".dimmed());
+                    }
+                }
+            } else {
+                println!(" {}", "No logs available".dimmed());
+            }
+        } else {
+            println!(" {}", "Select a process to view logs".dimmed());
+        }
+
+        let remaining = height.saturating_sub(header_height + process_list_height + 4 + last_lines_count);
+        for _ in 0..remaining {
+            println!();
+        }
+
+        print!("\x1B[{};1H", height);
+        print!(
+            "\x1B[44m\x1B[37m {:<width$} \x1B[0m",
+            format!(
+                "Processes: {} | Use ↑/↓ to navigate | Ctrl+C to exit",
+                processes.len()
+            ),
+            width = width - 1
+        );
+
+        io::stdout().flush()?;
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     }
+
+    print!("\x1B[?25h");
+    print!("\x1B[2J\x1B[1;1H");
+    println!("{}", "Monitor stopped. Goodbye!".green());
+
+    Ok(())
+}
+
+fn get_log_path(process_name: &str) -> PathBuf {
+    let pm2_home = if let Ok(home) = std::env::var("PM2_HOME") {
+        PathBuf::from(home)
+    } else if let Some(home_dir) = dirs::home_dir() {
+        home_dir.join(".pm2")
+    } else {
+        let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        current_dir.join(".pm2")
+    };
+    pm2_home.join("logs").join(format!("{}-out.log", process_name))
+}
+
+fn read_last_lines(path: &PathBuf, max_lines: usize, _offset: &mut u64) -> Result<Vec<String>> {
+    let file = File::open(path)?;
+    let reader = io::BufReader::new(file);
+    let mut all_lines = Vec::new();
+
+    for line in reader.lines() {
+        if let Ok(line) = line {
+            all_lines.push(line);
+        }
+    }
+
+    let start = all_lines.len().saturating_sub(max_lines);
+    Ok(all_lines[start..].to_vec())
 }
 
 pub async fn logs(name: Option<&str>, lines: usize, follow: bool) -> Result<()> {
@@ -261,67 +502,64 @@ pub async fn logs(name: Option<&str>, lines: usize, follow: bool) -> Result<()> 
 
     let manager = ProcessManager::new().await?;
 
-    let log_files: Vec<String> = if let Some(process_name) = name {
-        // Get specific process logs
-        if let Some(process) = manager.get_process(process_name) {
-            let mut files = Vec::new();
-            if let Some(log) = &process.log_file {
-                files.push(log.clone());
-            }
-            if let Some(err_log) = &process.error_log_file {
-                files.push(err_log.clone());
-            }
-            files
+    let pm2_home = if let Ok(home) = std::env::var("PM2_HOME") {
+        PathBuf::from(home)
+    } else if let Some(home_dir) = dirs::home_dir() {
+        home_dir.join(".pm2")
+    } else {
+        let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        current_dir.join(".pm2")
+    };
+    let logs_dir = pm2_home.join("logs");
+
+    let process_names: Vec<String> = if let Some(process_name) = name {
+        if manager.get_process(process_name).is_some() {
+            vec![process_name.to_string()]
         } else {
             display::display_error(&format!("Process '{}' not found", process_name));
             anyhow::bail!("Process not found")
         }
     } else {
-        // Get all process logs
-        let mut files = Vec::new();
-        for process in manager.list_processes() {
-            if let Some(log) = &process.log_file {
-                files.push(log.clone());
-            }
-            if let Some(err_log) = &process.error_log_file {
-                files.push(err_log.clone());
-            }
-        }
-        files
+        manager.list_processes().iter().map(|p| p.name.clone()).collect()
     };
 
-    if log_files.is_empty() {
-        display::display_warning("No log files configured");
+    if process_names.is_empty() {
+        display::display_warning("No processes found");
         return Ok(());
     }
 
-    for log_file in log_files {
-        println!("\n{} {}", "==>".blue(), log_file.bold());
-        println!("{}", "=".repeat(50));
+    for process_name in &process_names {
+        let out_log = logs_dir.join(format!("{}-out.log", process_name));
+        let err_log = logs_dir.join(format!("{}-error.log", process_name));
 
-        match File::open(&log_file).await {
-            Ok(file) => {
-                let reader = BufReader::new(file);
-                let mut lines_iter = reader.lines();
-                let mut all_lines = Vec::new();
+        for log_path in &[out_log, err_log] {
+            if log_path.exists() {
+                println!("\n{} {}", "==>".blue(), log_path.display().to_string().bold());
+                println!("{}", "=".repeat(50));
 
-                while let Some(line) = lines_iter.next_line().await? {
-                    all_lines.push(line);
+                match File::open(log_path).await {
+                    Ok(file) => {
+                        let reader = BufReader::new(file);
+                        let mut lines_iter = reader.lines();
+                        let mut all_lines = Vec::new();
+
+                        while let Some(line) = lines_iter.next_line().await? {
+                            all_lines.push(line);
+                        }
+
+                        let start = all_lines.len().saturating_sub(lines);
+                        for line in &all_lines[start..] {
+                            println!("{}", line);
+                        }
+
+                        if follow {
+                            display::display_info("Follow mode not yet implemented");
+                        }
+                    }
+                    Err(e) => {
+                        display::display_error(&format!("Failed to open log file: {}", e));
+                    }
                 }
-
-                // Show last N lines
-                let start = all_lines.len().saturating_sub(lines);
-                for line in &all_lines[start..] {
-                    println!("{}", line);
-                }
-
-                if follow {
-                    // TODO: Implement follow mode with tail -f like functionality
-                    display::display_info("Follow mode not yet implemented");
-                }
-            }
-            Err(e) => {
-                display::display_error(&format!("Failed to open log file '{}': {}", log_file, e));
             }
         }
     }

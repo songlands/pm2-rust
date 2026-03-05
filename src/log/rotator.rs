@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use chrono::{Local, NaiveDateTime};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::fs;
-use tracing::{info, warn};
+use tracing::info;
 
 /// 日志轮转器
 pub struct LogRotator {
@@ -35,14 +35,11 @@ impl LogRotator {
         }
     }
 
-    /// 检查是否需要轮转
     pub async fn should_rotate(&mut self) -> Result<bool> {
-        // 检查文件是否存在
         if !self.log_path.exists() {
             return Ok(false);
         }
 
-        // 检查大小限制
         if let Some(max_size) = self.rotate_size {
             let metadata = fs::metadata(&self.log_path).await?;
             if metadata.len() >= max_size {
@@ -56,7 +53,6 @@ impl LogRotator {
             }
         }
 
-        // 检查时间间隔
         if let Some(interval) = self.rotate_interval {
             let now = Local::now().naive_local();
             if let Some(last) = self.last_rotation {
@@ -71,7 +67,6 @@ impl LogRotator {
                     return Ok(true);
                 }
             } else {
-                // 首次检查，记录当前时间
                 self.last_rotation = Some(now);
             }
         }
@@ -79,7 +74,6 @@ impl LogRotator {
         Ok(false)
     }
 
-    /// 执行日志轮转
     pub async fn rotate(&mut self) -> Result<()> {
         if !self.log_path.exists() {
             return Ok(());
@@ -87,7 +81,6 @@ impl LogRotator {
 
         info!("Rotating log file: {}", self.log_path.display());
 
-        // 删除最旧的轮转文件
         let oldest = self.get_rotated_path(self.rotate_count);
         if oldest.exists() {
             fs::remove_file(&oldest).await.with_context(|| {
@@ -96,7 +89,6 @@ impl LogRotator {
             info!("Removed old log file: {}", oldest.display());
         }
 
-        // 移动现有的轮转文件（从后往前）
         for i in (1..self.rotate_count).rev() {
             let from = self.get_rotated_path(i);
             let to = self.get_rotated_path(i + 1);
@@ -112,7 +104,6 @@ impl LogRotator {
             }
         }
 
-        // 移动当前日志文件到 .1
         let rotated = self.get_rotated_path(1);
         fs::rename(&self.log_path, &rotated).await.with_context(|| {
             format!(
@@ -122,7 +113,6 @@ impl LogRotator {
             )
         })?;
 
-        // 更新上次轮转时间
         self.last_rotation = Some(Local::now().naive_local());
 
         info!(
@@ -153,7 +143,7 @@ impl LogRotator {
         self.log_path.with_file_name(rotated_name)
     }
 
-    /// 检查并执行轮转
+    #[allow(dead_code)]
     pub async fn check_and_rotate(&mut self) -> Result<bool> {
         if self.should_rotate().await? {
             self.rotate().await?;

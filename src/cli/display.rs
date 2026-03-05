@@ -1,18 +1,22 @@
 use crate::process::ProcessInfo;
 use colored::Colorize;
-use tabled::{Table, Tabled};
+use tabled::{Table, Tabled, settings::{Style, Alignment, Modify, object::{Rows, Columns, Cell}, Color}};
 
 #[derive(Tabled)]
 struct ProcessRow {
+    #[tabled(rename = "id")]
     id: String,
+    #[tabled(rename = "name")]
     name: String,
     #[tabled(rename = "mode")]
     mode: String,
     #[tabled(rename = "pid")]
     pid: String,
+    #[tabled(rename = "status")]
     status: String,
     #[tabled(rename = "restart")]
     restart: String,
+    #[tabled(rename = "uptime")]
     uptime: String,
     #[tabled(rename = "cpu")]
     cpu: String,
@@ -35,9 +39,9 @@ impl ProcessRow {
         let pid = process
             .pid
             .map(|p| p.to_string())
-            .unwrap_or_else(|| "N/A".to_string());
+            .unwrap_or_else(|| "0".to_string());
 
-        let status = format_status(&process.status.to_string());
+        let status = process.status.to_string();
 
         let uptime = format_duration(process.uptime_seconds);
 
@@ -70,6 +74,17 @@ impl ProcessRow {
     }
 }
 
+fn get_status_color(status: &str) -> Option<Color> {
+    match status {
+        "online" => Some(Color::FG_GREEN),
+        "stopped" => Some(Color::FG_BRIGHT_BLACK),
+        "stopping" => Some(Color::FG_YELLOW),
+        "launching" => Some(Color::FG_BLUE),
+        "errored" => Some(Color::FG_RED),
+        _ => None,
+    }
+}
+
 fn format_status(status: &str) -> String {
     match status {
         "online" => status.green().to_string(),
@@ -81,7 +96,7 @@ fn format_status(status: &str) -> String {
     }
 }
 
-fn format_duration(seconds: u64) -> String {
+pub fn format_duration(seconds: u64) -> String {
     if seconds < 60 {
         format!("{}s", seconds)
     } else if seconds < 3600 {
@@ -104,7 +119,19 @@ pub fn display_process_list(processes: &[&ProcessInfo]) {
         .map(|p| ProcessRow::from_process(p))
         .collect();
 
-    let table = Table::new(rows);
+    let mut table = Table::new(rows);
+    table
+        .with(Style::rounded())
+        .with(Modify::new(Rows::new(1..)).with(Alignment::left()))
+        .with(Modify::new(Columns::new(3..=3)).with(Alignment::right()))
+        .with(Modify::new(Columns::new(7..=8)).with(Alignment::right()));
+
+    for (idx, process) in processes.iter().enumerate() {
+        if let Some(color) = get_status_color(&process.status.to_string()) {
+            table.with(Modify::new(Cell::new(idx + 1, 4)).with(color));
+        }
+    }
+
     println!("{}", table);
 
     println!("\n{}: {}", "Total processes".bold(), processes.len());

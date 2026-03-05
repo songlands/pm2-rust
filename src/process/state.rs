@@ -21,10 +21,15 @@ impl ProcessState {
     }
 
     pub fn get_state_file_path() -> Result<PathBuf> {
-        // Use current directory for state file to avoid permission issues
-        let current_dir = std::env::current_dir().context("Failed to get current directory")?;
-        let pm2_dir = current_dir.join(".pm2");
-        Ok(pm2_dir.join("process_state.json"))
+        let pm2_home = if let Ok(home) = std::env::var("PM2_HOME") {
+            PathBuf::from(home)
+        } else if let Some(home_dir) = dirs::home_dir() {
+            home_dir.join(".pm2")
+        } else {
+            let current_dir = std::env::current_dir().context("Failed to get current directory")?;
+            current_dir.join(".pm2")
+        };
+        Ok(pm2_home.join("process_state.json"))
     }
 
     pub async fn load() -> Result<Self> {
@@ -76,12 +81,12 @@ impl ProcessState {
         self.processes.get(name)
     }
 
+    #[allow(dead_code)]
     pub fn get_process_mut(&mut self, name: &str) -> Option<&mut ProcessInfo> {
         self.processes.get_mut(name)
     }
 
     pub fn find_by_id(&self, id: &str) -> Option<&ProcessInfo> {
-        // Try exact match first, then try prefix match (for short IDs)
         self.processes
             .values()
             .find(|p| p.id == id)
@@ -92,6 +97,7 @@ impl ProcessState {
             })
     }
 
+    #[allow(dead_code)]
     pub fn find_by_pid(&self, pid: u32) -> Option<&ProcessInfo> {
         self.processes.values().find(|p| p.pid == Some(pid))
     }
@@ -119,6 +125,7 @@ impl ProcessState {
         }
     }
 
+    #[allow(dead_code)]
     pub fn update_metrics(&mut self, name: &str, cpu: f32, memory: f64, uptime: u64) {
         if let Some(process) = self.processes.get_mut(name) {
             process.cpu_percent = cpu;

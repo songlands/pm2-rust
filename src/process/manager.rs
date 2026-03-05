@@ -2,12 +2,9 @@ use super::{state::ProcessState, ManagedProcess, ProcessInfo, ProcessStatus};
 use crate::log::{parse_interval_string, parse_size_string, LogRotator};
 use anyhow::{Context, Result};
 use std::collections::HashMap;
-use std::process::Stdio;
 use std::time::Duration;
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
-use tokio::fs::OpenOptions;
 use tokio::process::Command;
-use tokio::time::interval;
 use tracing::{error, info, warn};
 
 pub struct ProcessManager {
@@ -121,7 +118,6 @@ impl ProcessManager {
     async fn spawn_process(&self, process_info: &ProcessInfo) -> Result<tokio::process::Child> {
         let script = &process_info.script;
 
-        // Determine if it's a node script, shell script, or binary
         let (program, args) = if script.ends_with(".js") {
             ("node", vec![script.as_str()])
         } else if script.ends_with(".py") {
@@ -129,7 +125,6 @@ impl ProcessManager {
         } else if script.ends_with(".sh") {
             ("bash", vec![script.as_str()])
         } else {
-            // Assume it's a binary
             (script.as_str(), vec![])
         };
 
@@ -138,41 +133,49 @@ impl ProcessManager {
             .envs(&process_info.env_vars)
             .kill_on_drop(false);
 
-        // Setup stdout logging
-        if let Some(log_file) = &process_info.log_file {
-            let log_path = std::path::Path::new(log_file);
-            if let Some(parent) = log_path.parent() {
-                tokio::fs::create_dir_all(parent).await.with_context(|| {
-                    format!("Failed to create log directory: {}", parent.display())
-                })?;
-            }
-            let stdout = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(log_file)
-                .with_context(|| format!("Failed to open log file: {}", log_file))?;
-            cmd.stdout(stdout);
+        let pm2_home = if let Ok(home) = std::env::var("PM2_HOME") {
+            std::path::PathBuf::from(home)
+        } else if let Some(home_dir) = dirs::home_dir() {
+            home_dir.join(".pm2")
         } else {
-            cmd.stdout(Stdio::null());
-        }
+            let current_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            current_dir.join(".pm2")
+        };
+        let logs_dir = pm2_home.join("logs");
+        tokio::fs::create_dir_all(&logs_dir).await?;
 
-        // Setup stderr logging
-        if let Some(error_file) = &process_info.error_log_file {
-            let error_path = std::path::Path::new(error_file);
-            if let Some(parent) = error_path.parent() {
-                tokio::fs::create_dir_all(parent).await.with_context(|| {
-                    format!("Failed to create error log directory: {}", parent.display())
-                })?;
-            }
-            let stderr = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(error_file)
-                .with_context(|| format!("Failed to open error log file: {}", error_file))?;
-            cmd.stderr(stderr);
-        } else {
-            cmd.stderr(Stdio::null());
+        let log_file = process_info.log_file.clone().unwrap_or_else(|| {
+            logs_dir.join(format!("{}-out.log", process_info.name)).to_string_lossy().to_string()
+        });
+        let error_file = process_info.error_log_file.clone().unwrap_or_else(|| {
+            logs_dir.join(format!("{}-error.log", process_info.name)).to_string_lossy().to_string()
+        });
+
+        let log_path = std::path::Path::new(&log_file);
+        if let Some(parent) = log_path.parent() {
+            tokio::fs::create_dir_all(parent).await.with_context(|| {
+                format!("Failed to create log directory: {}", parent.display())
+            })?;
         }
+        let stdout = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_file)
+            .with_context(|| format!("Failed to open log file: {}", log_file))?;
+        cmd.stdout(stdout);
+
+        let error_path = std::path::Path::new(&error_file);
+        if let Some(parent) = error_path.parent() {
+            tokio::fs::create_dir_all(parent).await.with_context(|| {
+                format!("Failed to create error log directory: {}", parent.display())
+            })?;
+        }
+        let stderr = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&error_file)
+            .with_context(|| format!("Failed to open error log file: {}", error_file))?;
+        cmd.stderr(stderr);
 
         let child = cmd.spawn().with_context(|| {
             format!("Failed to spawn process: {} {}", program, args.join(" "))
@@ -345,8 +348,9 @@ impl ProcessManager {
         let _ = self.state.save().await;
     }
 
+    #[allow(dead_code)]
     pub async fn start_monitoring(&mut self) {
-        let mut interval = interval(Duration::from_secs(5));
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
 
         loop {
             interval.tick().await;
@@ -358,10 +362,12 @@ impl ProcessManager {
         self.state.save().await
     }
 
+    #[allow(dead_code)]
     pub fn get_state(&self) -> &ProcessState {
         &self.state
     }
 
+    #[allow(dead_code)]
     pub fn get_state_mut(&mut self) -> &mut ProcessState {
         &mut self.state
     }

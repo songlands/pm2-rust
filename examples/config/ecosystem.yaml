@@ -22,7 +22,7 @@ apps:
   # Node.js HTTP 服务器
   - name: node-server
     script: examples/node-server/app.js
-    instances: 1
+    instances: 2
     exec_mode: fork
     max_memory_restart: 500M
     log_file: ./logs/node-server.log

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use tracing::{info, error};
+use tracing::info;
 
 mod cli;
 mod config;

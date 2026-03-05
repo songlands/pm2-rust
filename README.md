@@ -24,7 +24,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/yourusername/pm2.git
+git clone https://github.com/songlands/pm2-rust.git
 cd pm2
 
 # 编译发布版本

@@ -5,8 +5,6 @@ use std::path::Path;
 
 pub mod parser;
 
-pub use parser::ConfigParser;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub name: String,
@@ -101,6 +99,7 @@ fn default_log_rotate_count() -> u32 {
 }
 
 impl AppConfig {
+    #[allow(dead_code)]
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
         let content = std::fs::read_to_string(path)
@@ -131,6 +130,7 @@ impl AppConfig {
 }
 
 impl EcosystemConfig {
+    #[allow(dead_code)]
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
         let content = std::fs::read_to_string(path)
