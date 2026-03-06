@@ -4,6 +4,9 @@ use tokio::fs;
 
 pub mod rotator;
 
+#[cfg(test)]
+mod tests;
+
 pub use rotator::{parse_interval_string, parse_size_string, LogRotator};
 
 fn get_pm2_home() -> PathBuf {

@@ -6,6 +6,12 @@ use uuid::Uuid;
 pub mod manager;
 pub mod state;
 
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+mod state_tests;
+
 pub use manager::ProcessManager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

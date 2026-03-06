@@ -366,7 +366,7 @@ pm2 kill                    # 停止守护进程
 
 ## 📁 项目结构
 
-```
+```Mermaid
 pm2/
 ├── src/
 │   ├── main.rs              # 程序入口
@@ -390,6 +390,94 @@ pm2/
 ├── Cargo.toml               # Rust 配置
 └── README.md                # 项目文档
 ```
+
+## 🏗️ 系统架构
+
+### 架构图
+
+```mermaid
+flowchart TD
+    subgraph 用户交互层
+        CLI["CLI 命令行接口"]
+        Commands["命令处理模块
+        (commands.rs)"]
+        Display["显示模块
+        (display.rs)"]
+    end
+
+    subgraph 核心功能层
+        ProcessManager["进程管理器
+        (manager.rs)"]
+        ProcessState["进程状态管理
+        (state.rs)"]
+        ProcessInfo["进程信息
+        (process.rs)"]
+    end
+
+    subgraph 辅助功能层
+        Config["配置模块
+        (config/)"]
+        Log["日志模块
+        (log/)"]
+        Daemon["守护进程
+        (daemon/)"]
+    end
+
+    subgraph 系统层
+        OS["操作系统"]
+        Filesystem["文件系统"]
+        ChildProcess["子进程"]
+    end
+
+    CLI --> Commands
+    Commands --> Display
+    Commands --> ProcessManager
+    Commands --> Log
+    
+    ProcessManager --> ProcessState
+    ProcessManager --> ProcessInfo
+    ProcessManager --> ChildProcess
+    
+    ProcessState --> Filesystem
+    Log --> Filesystem
+    
+    Config --> ProcessInfo
+    Config --> ProcessManager
+    
+    Daemon --> ProcessManager
+    Daemon --> ProcessState
+
+    ChildProcess --> OS
+    Filesystem --> OS
+```
+
+### 模块关系
+
+| 模块 | 主要职责 | 文件位置 | 依赖关系 |
+|------|---------|----------|----------|
+| **CLI** | 命令行参数解析 | `src/main.rs` | 依赖 Commands |
+| **Commands** | 实现具体命令逻辑 | `src/cli/commands.rs` | 依赖 ProcessManager、Log |
+| **Display** | 终端输出格式化 | `src/cli/display.rs` | 无外部依赖 |
+| **ProcessManager** | 进程生命周期管理 | `src/process/manager.rs` | 依赖 ProcessState、ProcessInfo |
+| **ProcessState** | 进程状态持久化 | `src/process/state.rs` | 依赖 Filesystem |
+| **ProcessInfo** | 进程信息结构 | `src/process/process.rs` | 无外部依赖 |
+| **Config** | 配置文件解析 | `src/config/` | 无外部依赖 |
+| **Log** | 日志处理与轮转 | `src/log/` | 依赖 Filesystem |
+| **Daemon** | 守护进程管理 | `src/daemon/` | 依赖 ProcessManager |
+
+### 核心流程
+
+1. **命令执行流程**：
+   - 用户输入命令 → CLI 解析 → Commands 处理 → ProcessManager 执行 → 状态更新 → 显示结果
+
+2. **进程管理流程**：
+   - 启动进程 → 创建 ProcessInfo → 记录到 ProcessState → 监控进程状态 → 处理退出
+
+3. **日志处理流程**：
+   - 进程输出 → 写入日志文件 → 检查轮转条件 → 执行日志轮转
+
+4. **状态管理流程**：
+   - 进程状态变更 → 更新内存状态 → 持久化到文件 → 读取恢复状态
 
 ## 🔧 开发
 

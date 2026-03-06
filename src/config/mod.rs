@@ -183,15 +183,5 @@ fn parse_memory_string(s: &str) -> Option<u64> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod tests;
 
-    #[test]
-    fn test_parse_memory_string() {
-        assert_eq!(parse_memory_string("100M"), Some(100));
-        assert_eq!(parse_memory_string("100MB"), Some(100));
-        assert_eq!(parse_memory_string("1G"), Some(1024));
-        assert_eq!(parse_memory_string("1GB"), Some(1024));
-        assert_eq!(parse_memory_string("512"), Some(512));
-    }
-}

@@ -78,23 +78,3 @@ impl ConfigParser {
         env_map
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_env_vars() {
-        let env_list = vec![
-            "NODE_ENV=production".to_string(),
-            "PORT=3000".to_string(),
-            "DEBUG=true".to_string(),
-        ];
-
-        let env_map = ConfigParser::parse_env_vars(&env_list);
-        
-        assert_eq!(env_map.get("NODE_ENV"), Some(&"production".to_string()));
-        assert_eq!(env_map.get("PORT"), Some(&"3000".to_string()));
-        assert_eq!(env_map.get("DEBUG"), Some(&"true".to_string()));
-    }
-}
