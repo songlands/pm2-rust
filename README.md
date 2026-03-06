@@ -366,7 +366,7 @@ pm2 kill                    # 停止守护进程
 
 ## 📁 项目结构
 
-```Mermaid
+```
 pm2/
 ├── src/
 │   ├── main.rs              # 程序入口
@@ -381,12 +381,11 @@ pm2/
 │   │   ├── manager.rs       # 进程管理器
 │   │   └── state.rs         # 状态管理
 │   ├── daemon/              # 守护进程
+│   │   ├── mod.rs           # 守护进程定义
+│   │   └── server.rs        # 守护进程服务器
 │   └── log/                 # 日志管理
-├── examples/                # 示例应用
-│   ├── go-server/           # Go HTTP 服务器
-│   ├── node-server/         # Node.js HTTP 服务器
-│   ├── python-server/       # Python HTTP 服务器
-│   └── config/              # 配置文件示例
+│       ├── mod.rs           # 日志模块定义
+│       └── rotator.rs       # 日志轮转器
 ├── Cargo.toml               # Rust 配置
 └── README.md                # 项目文档
 ```
