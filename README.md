@@ -119,103 +119,6 @@ pm2 delete all
 
 ## 📝 配置文件
 
-### TOML 格式
-
-#### 单个应用配置 (app.toml)
-
-```toml
-name = "http-server"
-script = "app.js"
-instances = 1
-exec_mode = "fork"
-watch = false
-max_memory_restart = "500M"
-log_file = "./logs/http-server.log"
-error_file = "./logs/http-server-error.log"
-cwd = "."
-autorestart = true
-max_restarts = 15
-
-[env]
-NODE_ENV = "production"
-PORT = "3000"
-HOST = "0.0.0.0"
-```
-
-#### 生态系统配置 (ecosystem.toml)
-
-```toml
-[[apps]]
-name = "api-server"
-script = "api.js"
-instances = 4
-exec_mode = "cluster"
-max_memory_restart = "1G"
-log_file = "./logs/api.log"
-error_file = "./logs/api-error.log"
-
-[apps.env]
-NODE_ENV = "production"
-PORT = "3000"
-
-[[apps]]
-name = "web-server"
-script = "web.js"
-instances = 2
-exec_mode = "cluster"
-max_memory_restart = "500M"
-
-[apps.env]
-PORT = "3001"
-```
-
-### YAML 格式
-
-#### 单个应用配置 (app.yaml)
-
-```yaml
-name: http-server
-script: app.js
-instances: 1
-exec_mode: fork
-watch: false
-max_memory_restart: 500M
-log_file: ./logs/http-server.log
-error_file: ./logs/http-server-error.log
-cwd: .
-autorestart: true
-max_restarts: 15
-
-env:
-  NODE_ENV: production
-  PORT: "3000"
-  HOST: 0.0.0.0
-```
-
-#### 生态系统配置 (ecosystem.yaml)
-
-```yaml
-apps:
-  - name: api-server
-    script: api.js
-    instances: 4
-    exec_mode: cluster
-    max_memory_restart: 1G
-    log_file: ./logs/api.log
-    error_file: ./logs/api-error.log
-    env:
-      NODE_ENV: production
-      PORT: "3000"
-
-  - name: web-server
-    script: web.js
-    instances: 2
-    exec_mode: cluster
-    max_memory_restart: 500M
-    env:
-      PORT: "3001"
-```
-
 ### JSON 格式
 
 ```json
@@ -278,16 +181,20 @@ apps:
 
 **日志轮转配置示例：**
 
-```yaml
-apps:
-  - name: api-server
-    script: api.js
-    log_file: ./logs/api.log
-    error_file: ./logs/api-error.log
-    # 日志轮转配置
-    log_rotate_size: 20M        # 日志文件大小达到 20MB 时轮转
-    log_rotate_count: 5         # 保留 5 个轮转文件
-    log_rotate_interval: 1d     # 每天轮转一次
+```json
+{
+  "apps": [
+    {
+      "name": "api-server",
+      "script": "api.js",
+      "log_file": "./logs/api.log",
+      "error_file": "./logs/api-error.log",
+      "log_rotate_size": "20M",
+      "log_rotate_count": 5,
+      "log_rotate_interval": "1d"
+    }
+  ]
+}
 ```
 
 **支持的单位：**

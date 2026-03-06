@@ -83,3 +83,53 @@ Binary: ./pm2
 Size:   4.6M
 Status: 无 warnings，无 errors
 ```
+
+## [0.1.1] - 2026-03-06
+
+### 新增功能
+
+#### 单元测试
+- 为 `process` 模块添加单元测试
+- 为 `state` 模块添加单元测试
+- 为 `manager` 模块添加单元测试
+- 为 `log` 模块添加单元测试
+- 为 `config` 模块添加单元测试
+
+### 代码优化
+
+#### 测试文件结构
+- **config/mod.rs**: 将内联测试移至 `config/tests.rs`
+- **config/parser.rs**: 将内联测试移至 `config/tests.rs`
+- 统一测试文件结构，便于维护
+
+#### README.md 更新
+- 更新项目结构，添加 `src/daemon` 和 `src/log` 目录文件
+- 移除 `examples` 目录和测试文件的展示
+- 保持项目结构简洁清晰
+
+### Bug 修复
+
+#### Git 过滤问题
+- 修复 `pm2` 文件无法被 `.gitignore` 过滤的问题
+- 解决方案：使用 `git rm --cached pm2` 移除 git 跟踪
+
+### 文件变更
+
+```
+src/config/tests.rs        - 新增配置模块测试
+src/config/mod.rs          - 移除内联测试，引用外部测试
+src/config/parser.rs       - 移除内联测试
+src/process/tests.rs       - 新增进程模块测试
+src/process/state_tests.rs - 新增状态模块测试
+src/log/tests.rs           - 新增日志模块测试
+README.md                  - 更新项目结构
+CHANGELOG.md               - 更新修改记录
+```
+
+### 构建结果
+
+```
+Binary: ./pm2
+Size:   4.6M
+Status: 无 warnings，无 errors
+```
